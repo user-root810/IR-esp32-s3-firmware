@@ -1,0 +1,47 @@
+name: Compiler le firmware
+
+# Se déclenche à chaque push sur le dépôt
+on: push
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Récupère le code du dépôt
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      # 2. Installe Python
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 3. Installe PlatformIO
+      - name: Installer PlatformIO
+        run: pip install platformio esptool==4.8
+
+      # 4. Compile le projet (lit platformio.ini et src/main.cpp)
+      - name: Compiler
+        run: pio run
+
+      # 5. Fusionne bootloader + partitions + firmware en un seul fichier
+      #    (permet un flash complet en une seule écriture à l'adresse 0x0)
+      - name: Fusionner le firmware
+        run: |
+          python -m esptool merge_bin \
+            -o merged_firmware.bin \
+            --flash_mode dio \
+            --flash_freq 80m \
+            --flash_size 16MB \
+            0x0 .pio/build/esp32-s3-devkitc-1/bootloader.bin \
+            0x8000 .pio/build/esp32-s3-devkitc-1/partitions.bin \
+            0xe000 .pio/build/esp32-s3-devkitc-1/boot_app0.bin \
+            0x10000 .pio/build/esp32-s3-devkitc-1/firmware.bin
+
+      # 6. Publie le fichier résultant en "artifact" téléchargeable
+      - name: Publier le firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-telecommande
+          path: merged_firmware.bin
