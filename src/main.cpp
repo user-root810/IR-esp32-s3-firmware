@@ -6,19 +6,17 @@
  *
  * Matériel :
  *   - Récepteur IR : OUT -> GPIO 4, VCC -> 3.3V, GND -> GND
- *   - LED IR       : GPIO 5 -> résistance -> LED IR -> GND
- *                    (idéalement via transistor NPN pour la portée)
+ *   - LED IR       : GPIO 5 -> DATA, VCC -> 3.3V, GND -> GND (module avec résistance intégrée)
  *
  * ⚠ Broches à éviter sur l'ESP32-S3 :
  *   GPIO 19/20 (USB natif), GPIO 26-32 (flash interne),
  *   GPIO 33-37 (PSRAM sur modules octal).
  *
- * Bibliothèques à installer (Library Manager) :
+ * Bibliothèques installées par PlatformIO :
  *   - IRremoteESP8266
  *   - ArduinoJson  (v7)
  *
- * Carte : "ESP32S3 Dev Module"
- * ⚠ Si le moniteur série reste vide : Tools -> USB CDC On Boot -> Enabled
+ * Carte : "ESP32S3 DevKit C-1" (8MB ou 16MB Flash)
  */
 
 #include <WiFi.h>
@@ -32,13 +30,13 @@
 #include <IRutils.h>
 
 // ---------------- À PERSONNALISER ----------------
-const char* WIFI_SSID = "GrapheneOS";
-const char* WIFI_PASS = "graphene";
+const char* WIFI_SSID = "TON_RESEAU";
+const char* WIFI_PASS = "TON_MOT_DE_PASSE";
 // -------------------------------------------------
 
-// Broches
+// Broches (compatibles ESP32-S3)
 const uint16_t kRecvPin = 4;    // DATA du récepteur IR
-const uint16_t kIrLed   = 5;    // LED IR (via résistance/transistor)
+const uint16_t kIrLed   = 5;    // LED IR (via module)
 
 // Objets
 IRrecv irrecv(kRecvPin);
@@ -92,24 +90,24 @@ async function refresh(){
 async function send(n){
   msg('Envoi de ' + n + '...');
   await fetch('/send?name=' + encodeURIComponent(n));
-  msg('Envoy&eacute; ✔');
+  msg('Envoyé ✔');
 }
 
 async function del(n){
   await fetch('/delete?name=' + encodeURIComponent(n));
-  msg(n + ' supprim&eacute;');
+  msg(n + ' supprimé');
   refresh();
 }
 
 async function learn(){
   const n = document.getElementById('name').value.trim();
   if (!n){ msg("Donne d'abord un nom au bouton"); return; }
-  msg('En attente du signal IR... pointe la t&eacute;l&eacute;commande ! (10 s)');
+  msg('En attente du signal IR... pointe la télécommande ! (10 s)');
   await fetch('/learn?name=' + encodeURIComponent(n));
   for (let i = 0; i < 20; i++){
     await new Promise(r => setTimeout(r, 700));
     const s = await (await fetch('/status')).json();
-    if (s.state == 'done'){ msg('&laquo; ' + n + ' &raquo; enregistr&eacute; ✔'); break; }
+    if (s.state == 'done'){ msg('&laquo; ' + n + ' &raquo; enregistré ✔'); break; }
     if (s.state == 'idle') break;
   }
   document.getElementById('name').value = '';
@@ -173,7 +171,7 @@ void saveCapture() {
 }
 
 // ============================================================
-// Rejeu d'un code
+// Rejeu d'un code (CORRIGÉ pour IRremoteESP8266 v2.9+)
 // ============================================================
 bool playCode(const char* name) {
   JsonDocument doc;
@@ -190,14 +188,16 @@ bool playCode(const char* name) {
     static uint16_t buf[500];
     uint16_t i = 0;
     for (uint16_t v : t) buf[i++] = v;
-    return irsend.sendRaw(buf, n, 38);  // 38 kHz : fréquence standard
+    // CORRECTION 1: sendRaw() retourne void, pas de 'return' devant
+    irsend.sendRaw(buf, n, 38);  // 38 kHz : fréquence standard
+    return true;
   }
 
   int proto = type.toInt();
   uint64_t value = (uint64_t)(c["value"] | 0ULL);
   int bits = c["bits"] | 32;
-  // Rejoue via l'envoi générique (nbytes = bits arrondis au multiple de 8)
-  irsend.send((uint16_t)proto, value, (uint16_t)((bits + 7) / 8));
+  // CORRECTION 2: send() attend decode_type_t, pas uint16_t
+  irsend.send((decode_type_t)proto, value, (uint16_t)((bits + 7) / 8));
   return true;
 }
 
@@ -258,7 +258,7 @@ void handleDelete() {
 void setup() {
   Serial.begin(115200);
   delay(300);
-  Serial.println("\n=== IR WiFi (ESP32-S3) ===");
+  Serial.println("\n=== Telecommande IR WiFi (ESP32-S3) ===");
 
   // Stockage flash (formate au premier demarrage si besoin)
   if (!LittleFS.begin(true)) Serial.println("ERREUR LittleFS !");
